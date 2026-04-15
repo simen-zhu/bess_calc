@@ -10,7 +10,8 @@ def parse_bill(pdf_path: str) -> dict:
     with open(pdf_path, "rb") as f:
         pdf_b64 = base64.standard_b64encode(f.read()).decode()
 
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    api_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+    client = anthropic.Anthropic(api_key=api_key)
 
     message = client.messages.create(
         model="claude-opus-4-5",
