@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import tempfile
 import os
-from pipeline import parse_bill, bill_to_inputs
+from pipeline import parse_bill, bill_to_inputs, classify_customer
 from bess_calc import calc_bess, calc_solar, calc_combined
 
 app = FastAPI()
@@ -22,8 +22,18 @@ async def analyze(file: UploadFile = File(...)):
         tmp_path = tmp.name
 
     bill = parse_bill(tmp_path)
-    inputs = bill_to_inputs(bill)
     os.unlink(tmp_path)
+
+    customer_type = classify_customer(bill)
+
+    if customer_type == "residential":
+        return {
+            "customer_type": "residential",
+            "supported": False,
+            "reason": "住宅账单暂不支持，本工具仅适用于商业/工业用户账单（含需量电费）。",
+        }
+
+    inputs = bill_to_inputs(bill)
 
     bess = calc_bess(
         dr_kw=inputs["dr_kw"],
@@ -35,6 +45,8 @@ async def analyze(file: UploadFile = File(...)):
     combined = calc_combined(bess, solar)
 
     return {
+        "customer_type": customer_type,
+        "supported": True,
         "bess": {"net_cost": bess["net_cost"], "annual_savings": bess["annual_savings_y1"], "payback_years": bess["payback_years"], "npv_10yr": bess["npv_10yr"]},
         "solar": {"net_cost": solar["net_cost"], "annual_savings": solar["annual_savings_y1"], "payback_years": solar["payback_years"], "npv_10yr": solar["npv_10yr"]},
         "combined": {"net_cost": combined["net_cost"], "annual_savings": combined["annual_savings_y1"], "payback_years": combined["payback_years"], "npv_10yr": combined["npv_10yr"]},

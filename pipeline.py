@@ -49,6 +49,16 @@ def parse_bill(pdf_path: str) -> dict:
         raise ValueError(f"Kimi 返回的内容不是合法 JSON：{e}\n原始返回：{raw}")
 
 
+def classify_customer(bill: dict) -> str:
+    demand = bill.get("max_demand_kw") or 0
+    monthly_kwh = (bill.get("peak_kwh") or 0) + (bill.get("offpeak_kwh") or 0)
+    if demand >= 20:
+        return "commercial"
+    if monthly_kwh < 3000:
+        return "residential"
+    return "unclear"
+
+
 def bill_to_inputs(bill: dict) -> dict:
     dr_kw = bill["max_demand_kw"] * 0.17
     arb_kwh = min(
@@ -67,6 +77,15 @@ def bill_to_inputs(bill: dict) -> dict:
 def run_analysis(pdf_path: str):
     print("正在用Kimi解析账单...\n")
     bill = parse_bill(pdf_path)
+    customer_type = classify_customer(bill)
+
+    if customer_type == "residential":
+        print("该账单为住宅账单，暂不支持储能/光伏投资回报分析。")
+        print("本工具目前仅支持商业/工业用户账单（含需量电费）。")
+        return
+    if customer_type == "unclear":
+        print("⚠ 无法确定账单类型，按商业账单处理，结果可能不准确。\n")
+
     inputs = bill_to_inputs(bill)
 
     print(f"电力公司: {bill['utility']} | 费率: {bill['rate_schedule']}")
