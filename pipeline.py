@@ -65,7 +65,7 @@ def bill_to_inputs(bill: dict) -> dict:
 
 
 def run_analysis(pdf_path: str):
-    print("正在用Claude解析账单...\n")
+    print("正在用Kimi解析账单...\n")
     bill = parse_bill(pdf_path)
     inputs = bill_to_inputs(bill)
 
