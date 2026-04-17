@@ -1,35 +1,14 @@
 # pipeline.py
 import json
 import os
-import anthropic
-import base64
+from pathlib import Path
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
 from bess_calc import calc_bess, calc_solar, calc_combined
 
-
-def parse_bill(pdf_path: str) -> dict:
-    with open(pdf_path, "rb") as f:
-        pdf_b64 = base64.standard_b64encode(f.read()).decode()
-
-    api_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
-    client = anthropic.Anthropic(api_key=api_key)
-
-    message = client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=1024,
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "document",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "application/pdf",
-                        "data": pdf_b64,
-                    },
-                },
-                {
-                    "type": "text",
-                    "text": """从这张电费单提取以下数据，只返回JSON不要其他文字：
+PROMPT = """从这张电费单提取以下数据，只返回JSON不要其他文字：
 {
   "utility": "电力公司名称",
   "rate_schedule": "费率代码",
@@ -43,14 +22,31 @@ def parse_bill(pdf_path: str) -> dict:
   "peak_demand_rate": 峰时需量电价每kW数字,
   "total_amount": 账单总金额数字
 }"""
-                }
-            ],
-        }]
+
+
+def parse_bill(pdf_path: str) -> dict:
+    api_key = (os.environ.get("MOONSHOT_API_KEY") or "").strip()
+    client = OpenAI(api_key=api_key, base_url="https://api.moonshot.cn/v1")
+
+    # 上传 PDF 并提取文本内容
+    file_object = client.files.create(file=Path(pdf_path), purpose="file-extract")
+    file_content = client.files.content(file_id=file_object.id).text
+
+    # 调用 Kimi 解析账单
+    completion = client.chat.completions.create(
+        model="moonshot-v1-32k",
+        messages=[
+            {"role": "system", "content": file_content},
+            {"role": "user", "content": PROMPT},
+        ],
     )
 
-    raw = message.content[0].text
+    raw = completion.choices[0].message.content
     clean = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-    return json.loads(clean)
+    try:
+        return json.loads(clean)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Kimi 返回的内容不是合法 JSON：{e}\n原始返回：{raw}")
 
 
 def bill_to_inputs(bill: dict) -> dict:
@@ -96,4 +92,4 @@ def run_analysis(pdf_path: str):
 
 
 if __name__ == "__main__":
-    run_analysis("/Users/jiepengzhu/Documents/Python/bess_calc/PGE_bill_cali.pdf")
+    run_analysis(str(Path(__file__).parent / "PGE_bill_cali.pdf"))
